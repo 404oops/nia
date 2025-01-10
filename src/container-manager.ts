@@ -77,7 +77,11 @@ export default class ContainerManager {
           -e TZ=Europe/Belgrade \
           --restart unless-stopped \
           docker.io/library/ubuntu:latest`;
-          await exec(createCmd);
+          try {
+            await exec(createCmd);
+          } catch (error) {
+            log.error(error);
+          }
           log.info("   - Container created ");
         }
 
