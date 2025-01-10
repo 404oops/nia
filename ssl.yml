@@ -1,0 +1,3 @@
+ssl:
+  key: /etc/letsencrypt/live/nia.404oops.com/privkey.pem
+  cert: /etc/letsencrypt/live/nia.404oops.com/fullchain.pem

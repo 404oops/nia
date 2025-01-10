@@ -10,7 +10,8 @@
     "fix": "eslint src/**/*.ts --fix",
     "build": "npm run lint && npm run tsc",
     "start": "npm run build && npm run run",
-    "manage": "node out/management-cli.js"
+    "manage": "node out/management-cli.js",
+    "ssh": "ssh-keygen -t rsa -b 4096 -f ./id_rsa -N \"\""
   },
   "_moduleAliases": {
     "~": "./out"

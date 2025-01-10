@@ -8,9 +8,9 @@ import HTTPSServer from "./https-server";
 import log from "./log";
 
 const manager = new ContainerManager("./containers.yml");
-const https = new HTTPSServer("./ssl.yml", manager, 443);
-const http = new HTTPServer(manager, 80);
-const ssh = new SSHServer("./id_rsa", 22, manager);
+new HTTPSServer("./ssl.yml", manager, 443);
+new HTTPServer(manager, 80);
+new SSHServer("./id_rsa", 22, manager);
 
 process.on("uncaughtException", function (err) {
   log.error(err);

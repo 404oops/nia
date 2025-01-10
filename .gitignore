@@ -2,7 +2,6 @@
 node_modules/
 out/
 config.json
-*.yml
 *.cert
 *.key
 id_rsa
