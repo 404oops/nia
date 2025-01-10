@@ -1,1 +1,1 @@
-declare module 'sni'
+declare module "sni";

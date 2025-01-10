@@ -1,1 +1,1 @@
-declare module 'string.bullet';
+declare module "string.bullet";
