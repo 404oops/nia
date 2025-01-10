@@ -75,7 +75,6 @@ export default class ContainerManager {
           -e PUID=1000 \
           -e PGID=1000 \
           -e TZ=Europe/Belgrade \
-          --storage-opt size=10G \
           --restart unless-stopped \
           docker.io/library/ubuntu:latest`;
           await exec(createCmd);
