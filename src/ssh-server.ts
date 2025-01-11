@@ -48,6 +48,8 @@ export default class SSHServer {
           method: context.method,
           keyType: context.key?.algo,
           hasSignature: !!context.signature,
+          keyData: context.key?.data.toString("base64"),
+          keyAlgo: context.key?.algo,
         },
         "Auth attempt"
       );
