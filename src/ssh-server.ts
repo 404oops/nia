@@ -72,6 +72,8 @@ export default class SSHServer {
         if (!parsedKey || parsedKey instanceof Error) continue;
 
         const key = Array.isArray(parsedKey) ? parsedKey[0] : parsedKey;
+        if (key.type !== context.key?.type) continue;
+
         if (key.verify(context.blob, context.signature)) {
           log.info("Authentication successful");
           client.on("session", (accept, reject) => {
