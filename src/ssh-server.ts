@@ -85,15 +85,14 @@ export default class SSHServer {
             return reject();
           }
           log.info(`Valid key for username: ${username}`);
-          break;
+          log.info(`SSH Authenticated for username: ${username}`);
+          context.accept();
+          return;
         }
         default:
           log.warn(`Unsupported authentication method: ${context.method}`);
           return context.reject(["publickey"]);
       }
-
-      log.info(`SSH Authenticated for username: ${username}`);
-      context.accept();
     } catch (e) {
       log.error(`Error during authentication for username: ${username}`, e);
       reject();
