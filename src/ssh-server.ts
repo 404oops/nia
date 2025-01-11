@@ -93,10 +93,6 @@ export default class SSHServer {
       }
 
       log.info(`SSH Authenticated for username: ${username}`);
-
-      client.on("session", (acceptSess, rejectSess) =>
-        this.sessionHandler(client, acceptSess, rejectSess, username, isLogs)
-      );
       context.accept();
     } catch (e) {
       log.error(`Error during authentication for username: ${username}`, e);
@@ -196,5 +192,14 @@ export default class SSHServer {
     client.on("authentication", (context) =>
       this.authenticationHandler(client, context)
     );
+    client.on("ready", () => {
+      log.info("Client authenticated and ready");
+    });
+    client.on("end", () => {
+      log.info("Client disconnected");
+    });
+    client.on("error", (err) => {
+      log.error("Client connection error", err);
+    });
   }
 }
