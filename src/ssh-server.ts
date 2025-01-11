@@ -27,12 +27,15 @@ export default class SSHServer {
     private readonly port: number,
     private readonly containers: ContainerManager
   ) {
-    this.server = new SSH2Server(
-      {
-        hostKeys: [readFileSync(hostFilePath)],
-      },
-      this.connectionHandler.bind(this)
-    ).listen(port, () => {
+    this.server = new SSH2Server({
+      hostKeys: [readFileSync(hostFilePath)],
+    });
+
+    this.server.on("connection", (client, info) => {
+      this.connectionHandler(client, info);
+    });
+
+    this.server.listen(port, () => {
       log.info(`SSH Server listening on ${port}`);
     });
   }
@@ -42,7 +45,7 @@ export default class SSHServer {
     context: ssh2.AuthContext
   ): Promise<void> {
     const reject = () => {
-      context.reject();
+      context.reject(["publickey"]);
     };
 
     const isLogs = context.username.startsWith("logs.");
@@ -57,44 +60,44 @@ export default class SSHServer {
         return reject();
       }
 
-      const config = this.containers.resolveConfig(username);
+      const config = await this.containers.resolveConfig(username);
       if (config === undefined) return reject();
 
       const allowedKeys = config.ssh_keys
-        .map((key) => ssh2.utils.parseKey(key) as ParsedKey | undefined)
-        .filter((key) => key !== undefined) as ParsedKey[];
+        .map((key) => ssh2.utils.parseKey(key))
+        .filter((key): key is ParsedKey => key !== undefined);
+
       if (allowedKeys.length <= 0) return reject();
 
-      switch (context.method) {
-        case "publickey": {
-          let valid = false;
-          for (const key of allowedKeys) {
-            if (
-              context.key.algo !== key.type ||
-              !checkValue(context.key.data, Buffer.from(key.getPublicSSH())) ||
-              (context.signature &&
-                key.verify(context.blob, context.signature) !== true)
-            ) {
-              continue;
-            }
+      if (context.method === "publickey") {
+        let valid = false;
+        for (const key of allowedKeys) {
+          if (
+            context.key.algo === key.type &&
+            checkValue(context.key.data, Buffer.from(key.getPublicSSH())) &&
+            (!context.signature ||
+              key.verify(context.blob, context.signature) === true)
+          ) {
             valid = true;
+            break;
           }
-          if (!valid) {
-            return reject();
-          }
-          break;
         }
-        default:
+        if (!valid) {
           return reject();
+        }
+      } else {
+        return reject();
       }
 
       log.info("SSH Authenticated");
 
-      client.on("session", (acceptSess, rejectSess) =>
-        this.sessionHandler(client, acceptSess, rejectSess, username, isLogs)
-      );
+      client.on("session", (accept, reject) => {
+        this.sessionHandler(client, accept, reject, username, isLogs);
+      });
+
       context.accept();
     } catch (e) {
+      log.error("Authentication error:", e);
       reject();
     }
   }
@@ -117,34 +120,54 @@ export default class SSHServer {
         const containerStream = await container.logs({
           stderr: true,
           stdout: true,
+          follow: true,
+          tail: 100,
         });
+
         const session = acceptSess();
-        session.on("pty", (acceptPty, rejectPty) => {
+
+        if (!session) {
+          throw new Error("Session is undefined");
+        }
+        session.on("pty", (accept: () => void, reject: () => void) => {
           log.debug("pty requested");
-          acceptPty?.();
+          accept();
         });
-        session.on("shell", async (acceptShell, rejectShell) => {
-          log.debug("shell requested");
-          try {
-            log("SSH Log session started");
-            const stream = acceptShell();
-            const sessionStream = new internal.PassThrough();
-            sessionStream.on("data", (data) => stream.write(data));
-            log.debug(stream);
-            log.debug(containerStream);
-            container.modem.demuxStream(
-              containerStream,
-              sessionStream,
-              sessionStream
-            );
-            containerStream.on("end", () => {
-              client.end();
-            });
-          } catch (e) {
-            log.error("shell rejected", e);
-            rejectShell?.();
+
+        session.on(
+          "shell",
+          (accept: () => ssh2.ServerChannel, reject: () => void) => {
+            log.debug("shell requested");
+            try {
+              log.info("SSH Log session started");
+              const stream = accept();
+              const sessionStream = new internal.PassThrough();
+
+              sessionStream.on("data", (data) => {
+                stream.write(data);
+              });
+
+              container.modem.demuxStream(
+                containerStream,
+                sessionStream,
+                sessionStream
+              );
+
+              containerStream.on("end", () => {
+                stream.end();
+                client.end();
+              });
+
+              stream.on("error", (err: any) => {
+                log.error("Stream error:", err);
+                client.end();
+              });
+            } catch (e) {
+              log.error("Shell error:", e);
+              reject();
+            }
           }
-        });
+        );
       } else {
         const exec = await container.exec({
           Cmd: ["/bin/bash"],
@@ -153,26 +176,56 @@ export default class SSHServer {
           AttachStdin: true,
           Tty: true,
         });
-        const containerStream = await exec.start({ stdin: true });
+
+        const containerStream = await exec.start({
+          hijack: true,
+          stdin: true,
+          Tty: true,
+        });
+
         const session = acceptSess();
-        session.on("pty", (acceptPty, rejectPty) => {
-          acceptPty?.();
+        if (!session) {
+          throw new Error("Session is undefined");
+        }
+        session.on("pty", (accept: () => void, reject: () => void) => {
+          accept();
         });
-        session.on("shell", async (acceptShell, rejectShell) => {
-          try {
-            log("SSH Shell started");
-            const stream = acceptShell();
-            container.modem.demuxStream(containerStream, stream, stream);
-            containerStream.on("end", () => {
-              client.end();
-            });
-            stream.pipe(containerStream);
-          } catch (e) {
-            rejectShell?.();
+
+        session.on(
+          "shell",
+          (accept: () => ssh2.ServerChannel, reject: () => void) => {
+            try {
+              log.info("SSH Shell started");
+              const stream = accept();
+
+              stream.on("error", (err: any) => {
+                log.error("Stream error:", err);
+                client.end();
+              });
+
+              containerStream.on("error", (err) => {
+                log.error("Container stream error:", err);
+                client.end();
+              });
+
+              container.modem.demuxStream(containerStream, stream, stream);
+
+              containerStream.on("end", () => {
+                stream.end();
+                client.end();
+              });
+
+              containerStream.pipe(stream);
+              stream.pipe(containerStream);
+            } catch (e) {
+              log.error("Shell error:", e);
+              reject();
+            }
           }
-        });
+        );
       }
     } catch (e) {
+      log.error("Session error:", e);
       rejectSess();
     }
   }
@@ -184,5 +237,9 @@ export default class SSHServer {
     client.on("authentication", (context) =>
       this.authenticationHandler(client, context)
     );
+
+    client.on("error", (err) => {
+      log.error("Client connection error:", err);
+    });
   }
 }
