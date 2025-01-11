@@ -45,6 +45,7 @@ export default class SSHServer {
     context: ssh2.AuthContext
   ): Promise<void> {
     const reject = () => {
+      log.info("Rejecting authentication");
       context.reject(["publickey"]);
     };
 
@@ -52,44 +53,80 @@ export default class SSHServer {
     const username = isLogs ? context.username.substring(5) : context.username;
 
     try {
-      log.info("SSH Authentication Started");
+      log.info(
+        { username, method: context.method },
+        "SSH Authentication Started"
+      );
 
-      // Immediately reject if not using public key authentication
       if (context.method !== "publickey") {
-        log.info(`Rejecting auth attempt using method: ${context.method}`);
+        log.info(`Rejecting non-publickey auth attempt: ${context.method}`);
         return reject();
       }
 
+      log.info({ key: context.key }, "Received public key from client");
+
       const config = await this.containers.resolveConfig(username);
-      if (config === undefined) return reject();
+      if (config === undefined) {
+        log.info("No config found for username");
+        return reject();
+      }
 
       const allowedKeys = config.ssh_keys
-        .map((key) => ssh2.utils.parseKey(key))
+        .map((key) => {
+          const parsed = ssh2.utils.parseKey(key);
+          log.info({ key, parsed: !!parsed }, "Parsing configured key");
+          return parsed;
+        })
         .filter((key): key is ParsedKey => key !== undefined);
 
-      if (allowedKeys.length <= 0) return reject();
+      log.info(`Found ${allowedKeys.length} valid keys in config`);
+
+      if (allowedKeys.length <= 0) {
+        log.info("No valid keys found in config");
+        return reject();
+      }
 
       if (context.method === "publickey") {
         let valid = false;
         for (const key of allowedKeys) {
+          log.info(
+            {
+              clientAlgo: context.key.algo,
+              configAlgo: key.type,
+              matches: context.key.algo === key.type,
+            },
+            "Checking key algorithm"
+          );
+
+          const keyMatches = checkValue(
+            context.key.data,
+            Buffer.from(key.getPublicSSH())
+          );
+          log.info({ keyMatches }, "Checking key data");
+
+          if (context.signature) {
+            const signatureValid = key.verify(context.blob, context.signature);
+            log.info({ signatureValid }, "Checking signature");
+          }
+
           if (
             context.key.algo === key.type &&
-            checkValue(context.key.data, Buffer.from(key.getPublicSSH())) &&
+            keyMatches &&
             (!context.signature ||
               key.verify(context.blob, context.signature) === true)
           ) {
             valid = true;
+            log.info("Found matching valid key");
             break;
           }
         }
         if (!valid) {
+          log.info("No matching valid key found");
           return reject();
         }
-      } else {
-        return reject();
       }
 
-      log.info("SSH Authenticated");
+      log.info("SSH Authentication Successful");
 
       client.on("session", (accept, reject) => {
         this.sessionHandler(client, accept, reject, username, isLogs);
