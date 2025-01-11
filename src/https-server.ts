@@ -47,7 +47,7 @@ export default class HTTPSServer {
       slignshot.connect(
         { host: isleah ? "localhost" : ip, port: isleah ? this.port + 1 : 443 },
         () => {
-          slignshot.write(data);
+          slignshot.write(new Uint8Array(data));
           socket.pipe(slignshot).pipe(socket);
         }
       );
