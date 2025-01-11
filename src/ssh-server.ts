@@ -50,6 +50,13 @@ export default class SSHServer {
 
     try {
       log.info("SSH Authentication Started");
+
+      // Immediately reject if not using public key authentication
+      if (context.method !== "publickey") {
+        log.info(`Rejecting auth attempt using method: ${context.method}`);
+        return reject();
+      }
+
       const config = this.containers.resolveConfig(username);
       if (config === undefined) return reject();
 
