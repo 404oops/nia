@@ -87,14 +87,17 @@ export default class SSHServer {
           log.info(`Valid key for username: ${username}`);
           log.info(`SSH Authenticated for username: ${username}`);
           context.accept();
-          client.on("session", (acceptSess, rejectSess) => {
-            this.sessionHandler(
-              client,
-              acceptSess,
-              rejectSess,
-              username,
-              isLogs
-            );
+          client.on("session", (accept, reject) => {
+            const session = accept();
+            session.once("shell", (acceptShell, rejectShell) => {
+              this.sessionHandler(
+                client,
+                acceptShell,
+                rejectShell,
+                username,
+                isLogs
+              );
+            });
           });
           return;
         }
