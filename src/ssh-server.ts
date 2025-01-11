@@ -1,7 +1,6 @@
 import { readFileSync } from "fs";
 import ssh2, { Server as SSH2Server } from "ssh2";
 import { timingSafeEqual } from "crypto";
-import { ParsedKey } from "ssh2-streams";
 import log from "~/log";
 import ContainerManager from "./container-manager";
 import internal from "stream";
@@ -13,7 +12,10 @@ function checkValue(input: Buffer, allowed: Buffer): boolean {
     // same input when lengths don't match what we expect ...
     allowed = input;
   }
-  const isMatch = timingSafeEqual(input, allowed);
+  const isMatch = timingSafeEqual(
+    new Uint8Array(input),
+    new Uint8Array(allowed)
+  );
   return !autoReject && isMatch;
 }
 
@@ -79,29 +81,31 @@ export default class SSHServer {
           continue;
         }
         const key = Array.isArray(parsedKey) ? parsedKey[0] : parsedKey;
-        log.info(
-          {
-            configuredKeyType: key.type,
-            attemptedKeyType: context.key?.algo,
-            keyMatch: key.type === context.key?.algo,
-          },
-          "Key type comparison"
-        );
-        if (key.type !== context.key?.algo) continue;
 
-        if (key.verify(context.blob, context.signature)) {
-          log.info("Authentication successful");
-          client.on("session", (accept, reject) => {
-            this.sessionHandler(
-              client,
-              accept,
-              reject,
-              context.username,
-              false
-            );
-          });
-          return context.accept();
+        // Check key algorithm and raw public key data first
+        if (
+          context.key?.algo !== key.type ||
+          !checkValue(
+            context.key?.data,
+            Buffer.from(key.getPublicSSH(), "base64")
+          )
+        ) {
+          continue;
         }
+
+        // Then verify signature if present
+        if (
+          context.signature &&
+          key.verify(context.blob, context.signature) !== true
+        ) {
+          continue;
+        }
+
+        log.info("Authentication successful");
+        client.on("session", (accept, reject) => {
+          this.sessionHandler(client, accept, reject, context.username, false);
+        });
+        return context.accept();
       }
 
       return context.reject();
