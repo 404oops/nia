@@ -63,6 +63,7 @@ export default class SSHServer {
       const config = await this.containers.resolveConfig(context.username);
       if (!config) {
         return context.reject();
+        log.error("No config found for user");
       }
 
       // First phase: key check
@@ -90,6 +91,7 @@ export default class SSHServer {
             Buffer.from(key.getPublicSSH(), "base64")
           )
         ) {
+          log.info("Key data mismatch");
           continue;
         }
 
