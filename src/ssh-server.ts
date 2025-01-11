@@ -71,8 +71,22 @@ export default class SSHServer {
       // Second phase: signature verification
       for (const configuredKeyStr of config.ssh_keys) {
         const parsedKey = ssh2.utils.parseKey(configuredKeyStr);
-        if (!parsedKey || parsedKey instanceof Error) continue;
+        if (!parsedKey || parsedKey instanceof Error) {
+          log.warn(
+            { error: parsedKey, keyStr: configuredKeyStr },
+            "Failed to parse configured key"
+          );
+          continue;
+        }
         const key = Array.isArray(parsedKey) ? parsedKey[0] : parsedKey;
+        log.info(
+          {
+            configuredKeyType: key.type,
+            attemptedKeyType: context.key?.algo,
+            keyMatch: key.type === context.key?.algo,
+          },
+          "Key type comparison"
+        );
         if (key.type !== context.key?.algo) continue;
 
         if (key.verify(context.blob, context.signature)) {
