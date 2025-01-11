@@ -98,11 +98,27 @@ export default class SSHServer {
             "Checking key algorithm"
           );
 
-          const keyMatches = checkValue(
-            context.key.data,
-            Buffer.from(key.getPublicSSH())
+          log.info(
+            {
+              clientKey: context.key.data.toString("base64"),
+              configKey: key.getPublicSSH().toString("base64"),
+              clientKeyLength: context.key.data.length,
+              configKeyLength: key.getPublicSSH().length,
+            },
+            "Key comparison details"
           );
-          log.info({ keyMatches }, "Checking key data");
+
+          // Remove any whitespace or newlines from the key
+          const cleanKey = key
+            .getPublicSSH()
+            .toString("base64")
+            .replace(/\s+/g, "");
+          const cleanClientKey = context.key.data
+            .toString("base64")
+            .replace(/\s+/g, "");
+
+          const keyMatches = cleanKey === cleanClientKey;
+          log.info({ keyMatches }, "Key match result");
 
           if (context.signature) {
             const signatureValid = key.verify(context.blob, context.signature);
