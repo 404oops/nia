@@ -101,7 +101,7 @@ export default class SSHServer {
           log.info(
             {
               clientKey: context.key.data.toString("base64"),
-              configKey: key.getPublicSSH().toString("base64"),
+              configKey: key.getPublicSSH().toString(),
               clientKeyLength: context.key.data.length,
               configKeyLength: key.getPublicSSH().length,
             },
@@ -109,10 +109,7 @@ export default class SSHServer {
           );
 
           // Remove any whitespace or newlines from the key
-          const cleanKey = key
-            .getPublicSSH()
-            .toString("base64")
-            .replace(/\s+/g, "");
+          const cleanKey = key.getPublicSSH().toString().replace(/\s+/g, "");
           const cleanClientKey = context.key.data
             .toString("base64")
             .replace(/\s+/g, "");
