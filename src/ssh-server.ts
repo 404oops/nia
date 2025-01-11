@@ -39,7 +39,7 @@ export default class SSHServer {
 
   private async authenticationHandler(
     client: ssh2.Connection,
-    context: ssh2.AuthContext
+    context: ssh2.PublicKeyAuthContext
   ): Promise<void> {
     try {
       log.info(
@@ -68,9 +68,10 @@ export default class SSHServer {
 
       // Second phase: signature verification
       for (const configuredKeyStr of config.ssh_keys) {
-        const key = ssh2.utils.parseKey(configuredKeyStr);
-        if (!key) continue;
+        const parsedKey = ssh2.utils.parseKey(configuredKeyStr);
+        if (!parsedKey || parsedKey instanceof Error) continue;
 
+        const key = Array.isArray(parsedKey) ? parsedKey[0] : parsedKey;
         if (key.verify(context.blob, context.signature)) {
           log.info("Authentication successful");
           client.on("session", (accept, reject) => {
@@ -226,7 +227,7 @@ export default class SSHServer {
     info: ssh2.ClientInfo
   ): void {
     client.on("authentication", (context) =>
-      this.authenticationHandler(client, context)
+      this.authenticationHandler(client, context as ssh2.PublicKeyAuthContext)
     );
 
     client.on("error", (err) => {
