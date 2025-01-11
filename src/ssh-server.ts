@@ -41,98 +41,55 @@ export default class SSHServer {
     client: ssh2.Connection,
     context: ssh2.AuthContext
   ): Promise<void> {
-    const reject = () => {
-      log.info("Rejecting authentication");
-      context.reject(["publickey"]);
-    };
-
-    const isLogs = context.username.startsWith("logs.");
-    const username = isLogs ? context.username.substring(5) : context.username;
-
     try {
       log.info(
-        { username, method: context.method },
-        "SSH Authentication Started"
+        {
+          username: context.username,
+          method: context.method,
+          keyType: context.key?.algo,
+          hasSignature: !!context.signature,
+        },
+        "Auth attempt"
       );
 
       if (context.method !== "publickey") {
-        log.info(`Rejecting non-publickey auth attempt: ${context.method}`);
-        return reject();
+        return context.reject(["publickey"]);
       }
 
-      log.info({ key: context.key }, "Received public key from client");
-
-      const config = await this.containers.resolveConfig(username);
-      if (config === undefined) {
-        log.info("No config found for username");
-        return reject();
+      const config = await this.containers.resolveConfig(context.username);
+      if (!config) {
+        return context.reject();
       }
 
-      const allowedKeys = config.ssh_keys
-        .map((key) => {
-          const parsed = ssh2.utils.parseKey(key);
-          log.info({ key, parsed: !!parsed }, "Parsing configured key");
-          return parsed;
-        })
-        .filter((key): key is ParsedKey => key !== undefined);
-
-      log.info(`Found ${allowedKeys.length} valid keys in config`);
-
-      if (allowedKeys.length <= 0) {
-        log.info("No valid keys found in config");
-        return reject();
+      // First phase: key check
+      if (!context.signature) {
+        return context.accept();
       }
 
-      if (context.method === "publickey") {
-        let valid = false;
-        for (const key of allowedKeys) {
-          log.info(
-            {
-              clientAlgo: context.key.algo,
-              configAlgo: key.type,
-              matches: context.key.algo === key.type,
-            },
-            "Checking key algorithm"
-          );
+      // Second phase: signature verification
+      for (const configuredKeyStr of config.ssh_keys) {
+        const key = ssh2.utils.parseKey(configuredKeyStr);
+        if (!key) continue;
 
-          const keyMatches = checkValue(
-            context.key.data,
-            Buffer.from(key.getPublicSSH())
-          );
-          log.info({ keyMatches }, "Checking key data");
-
-          if (context.signature) {
-            const signatureValid = key.verify(context.blob, context.signature);
-            log.info({ signatureValid }, "Checking signature");
-          }
-
-          if (
-            context.key.algo === key.type &&
-            keyMatches &&
-            (!context.signature ||
-              key.verify(context.blob, context.signature) === true)
-          ) {
-            valid = true;
-            log.info("Found matching valid key");
-            break;
-          }
-        }
-        if (!valid) {
-          log.info("No matching valid key found");
-          return reject();
+        if (key.verify(context.blob, context.signature)) {
+          log.info("Authentication successful");
+          client.on("session", (accept, reject) => {
+            this.sessionHandler(
+              client,
+              accept,
+              reject,
+              context.username,
+              false
+            );
+          });
+          return context.accept();
         }
       }
 
-      log.info("SSH Authentication Successful");
-
-      client.on("session", (accept, reject) => {
-        this.sessionHandler(client, accept, reject, username, isLogs);
-      });
-
-      context.accept();
+      return context.reject();
     } catch (e) {
-      log.error("Authentication error:", e);
-      reject();
+      log.error("Auth error:", e);
+      return context.reject();
     }
   }
 
