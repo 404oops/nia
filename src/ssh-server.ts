@@ -13,10 +13,7 @@ function checkValue(input: Buffer, allowed: Buffer): boolean {
     // same input when lengths don't match what we expect ...
     allowed = input;
   }
-  const isMatch = timingSafeEqual(
-    new Uint8Array(input),
-    new Uint8Array(allowed)
-  );
+  const isMatch = timingSafeEqual(input, allowed);
   return !autoReject && isMatch;
 }
 
