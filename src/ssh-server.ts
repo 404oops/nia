@@ -63,6 +63,7 @@ export default class SSHServer {
           let valid = false;
           for (const key of allowedKeys) {
             if (
+              !context.key ||
               context.key.algo !== key.type ||
               !checkValue(context.key.data, Buffer.from(key.getPublicSSH())) ||
               (context.signature &&
@@ -71,6 +72,7 @@ export default class SSHServer {
               continue;
             }
             valid = true;
+            break;
           }
           if (!valid) {
             return reject();
@@ -78,7 +80,7 @@ export default class SSHServer {
           break;
         }
         default:
-          return reject();
+          return context.reject(["publickey"]);
       }
 
       log.info("SSH Authenticated");
